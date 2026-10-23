@@ -1,0 +1,19 @@
+[project]
+name = "hello-127"
+version = "0.1.0"
+description = "Carry TCP over a container's standard streams to a service on the Mac's loopback"
+readme = "README.md"
+authors = [
+    { name = "Go Nakamaru", email = "gonakamaru@gmail.com" }
+]
+requires-python = ">=3.14"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = []
+
+[project.scripts]
+hello-127 = "hello_127.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
