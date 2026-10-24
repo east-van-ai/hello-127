@@ -1,6 +1,6 @@
 [project]
 name = "hello-127"
-version = "0.1.0"
+version = "0.1.1"
 description = "Carry TCP over a container's standard streams to a service on the Mac's loopback"
 readme = "README.md"
 authors = [
@@ -9,7 +9,12 @@ authors = [
 requires-python = ">=3.14"
 license = "MIT"
 license-files = ["LICENSE"]
+classifiers = ["Operating System :: MacOS"]
 dependencies = []
+
+[project.urls]
+Repository = "https://github.com/east-van-ai/hello-127"
+Changelog = "https://github.com/east-van-ai/hello-127/blob/main/CHANGELOG.md"
 
 [project.scripts]
 hello-127 = "hello_127.cli:main"

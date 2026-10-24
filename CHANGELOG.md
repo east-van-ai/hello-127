@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-24
+
+### Added
+
+- Published on PyPI: `uv tool install hello-127` installs the `hello-127` command.
+- The package metadata links the repository and the changelog.
+
 ## [0.1.0] - 2026-10-23
 
 ### Added

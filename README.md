@@ -2,9 +2,13 @@
 
 ![CI](https://github.com/east-van-ai/hello-127/actions/workflows/ci.yaml/badge.svg)
 
-Can a container with no network at all still reach a service on the Mac's
-127.0.0.1, such as Ollama? Yes, through a pipe. This small experiment builds
-the pipe, then records how it fails.
+Can a Docker or Apple Container with no network access still reach a service on
+the Mac's 127.0.0.1, such as Ollama? Yes, through a pipe: the standard streams
+of `docker exec -i` or `container exec -i`. hello-127 is a small command that
+carries TCP through that pipe.
+
+hello-127 is a reusable CLI tool for this purpose. This page covers its design,
+limitations, install, behaviour, and known failure modes.
 
 ## How a container reaches loopback today
 
@@ -62,9 +66,9 @@ connections through one channel.
 
 ## What it is not
 
-It carries bytes. It never reads a request, so it forwards Ollama's whole
-API. A program in the container can chat, but it can also pull or delete
-models.
+It carries bytes, and never reads them. Whatever the service lets a local
+client do, a program in the container can do too. The tunnel opens the whole
+service, not one part of it.
 
 It also changes how a connection ends. TCP has two endings: a clean close,
 and a reset when something breaks. The pipe has no frame for a reset, so
@@ -76,39 +80,39 @@ A gatekeeper is the other design. It understands each request and decides
 what to allow. hello-127 makes the pipe on purpose and leaves the deciding
 out.
 
-## What you need
+## Install
 
 - A Mac.
-- [uv](https://docs.astral.sh/uv/), which runs hello-127 and fetches its
-  Python.
+- [uv](https://docs.astral.sh/uv/), which installs hello-127 and fetches
+  its Python.
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/), or
   [Apple Container](https://github.com/apple/container).
-- [Ollama](https://ollama.com), running, with Cohere's Tiny Aya pulled:
+- hello-127, from PyPI:
 
   ```bash
-  ollama pull hf.co/CohereLabs/tiny-aya-global-GGUF:Q4_K_M
-  ```
-
-- This repo:
-
-  ```bash
-  git clone https://github.com/east-van-ai/hello-127.git
-  cd hello-127
+  uv tool install hello-127
   ```
 
 hello-127 itself needs nothing beyond Python's standard library.
 
-## The experiment
+## Try it yourself
 
-The test: a container started with `--network none` streams a chat from
-Ollama through hello-127. Without the tunnel, the same chat is refused.
+A container started with `--network none` streams a chat from Ollama
+through hello-127. Without the tunnel, the same chat is refused.
+
+It needs [Ollama](https://ollama.com), running, with Cohere's Tiny Aya
+pulled, a 2.1 GB download:
+
+```bash
+ollama pull hf.co/CohereLabs/tiny-aya-global-GGUF:Q4_K_M
+```
 
 It takes three terminals. In the first, start a container with no network,
 then the tunnel into it:
 
 ```bash
 docker run -d --rm --name h127 --network none python:3.12-slim sleep infinity
-uv run hello-127 tunnel docker h127
+hello-127 tunnel docker h127
 ```
 
 - `-d` runs the container in the background.
@@ -126,7 +130,7 @@ hello-127: inside: listening on 127.0.0.1:11434
 In the second, chat from inside the container:
 
 ```bash
-uv run hello-127 ollama-query docker h127
+hello-127 ollama-query docker h127
 ```
 
 ```text
@@ -177,16 +181,15 @@ hello-127: inside: input ended, helper exiting
 
 Then `docker stop h127` removes the container.
 
-Apple Container runs the same experiment, with the same flags:
+Apple Container works the same way, with the same flags:
 
 ```bash
 container run -d --rm --name h127 --network none python:3.14-slim sleep infinity
-uv run hello-127 tunnel container h127
+hello-127 tunnel container h127
 ```
 
-The chat is `uv run hello-127 ollama-query container h127`, and `lsof`
-again names hello-127's Python. Then
-`container stop h127` removes the container.
+The chat is `hello-127 ollama-query container h127`, and `lsof` again
+names hello-127's Python. Then `container stop h127` removes the container.
 
 Measured on macOS with Docker 29.8.0, Apple Container 1.6.0, and Ollama
 0.33.3.
@@ -197,8 +200,8 @@ Ollama is only the specimen. The tunnel carries any TCP service on the
 Mac's loopback. `--forward` picks both ends, in the shape `ssh -L` uses:
 
 ```bash
-uv run hello-127 tunnel docker h127 --forward 127.0.0.2:80:127.0.0.1:11434
-uv run hello-127 ollama-query docker h127 --connect 127.0.0.2:80
+hello-127 tunnel docker h127 --forward 127.0.0.2:80:127.0.0.1:11434
+hello-127 ollama-query docker h127 --connect 127.0.0.2:80
 ```
 
 - `127.0.0.2:80` is where the helper listens inside. Leave the address out,
@@ -209,7 +212,7 @@ uv run hello-127 ollama-query docker h127 --connect 127.0.0.2:80
 `--forward` repeats, and one helper carries every listener:
 
 ```bash
-uv run hello-127 tunnel docker h127 --forward 11434:127.0.0.1:11434 --forward 8080:127.0.0.1:8000
+hello-127 tunnel docker h127 --forward 11434:127.0.0.1:11434 --forward 8080:127.0.0.1:8000
 ```
 
 Two forwards may dial the same target. Two listeners on the same address
@@ -272,7 +275,7 @@ container with no network.
 
 ## More documentation
 
-- [Changelog](CHANGELOG.md): project history and releases
+- [Changelog](https://github.com/east-van-ai/hello-127/blob/main/CHANGELOG.md): project history and releases
 
 ## Use of AI
 
