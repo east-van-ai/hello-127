@@ -1,10 +1,10 @@
 [project]
 name = "hello-127"
-version = "0.1.1"
+version = "0.2.0"
 description = "Carry TCP over a container's standard streams to a service on the Mac's loopback"
 readme = "README.md"
 authors = [
-    { name = "Go Nakamaru", email = "gonakamaru@gmail.com" }
+    { name = "Go Nakamaru" }
 ]
 requires-python = ">=3.14"
 license = "MIT"

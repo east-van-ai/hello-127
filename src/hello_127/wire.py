@@ -102,12 +102,41 @@ def half_close(tunnel, conn):
     finish_half(tunnel, conn)
 
 
-async def dispatch(tunnel, dial=None):
+def acceptor(tunnel, numbers, index):
+    """Return the accept callback for the listener at `index` in this end's list.
+
+    `numbers` hands out this end's connection numbers: odd inside, even on the Mac,
+    so the two ends never pick the same one.
+    """
+
+    async def accept(reader, writer):
+        """Number a new connection, announce it with its listener, and pump it."""
+        conn = next(numbers)
+        open_link(tunnel, conn, writer)
+        tunnel.pipe_out.write(frame(OPEN, conn, INDEX.pack(index)))
+        await pump(tunnel, conn, reader)
+
+    return accept
+
+
+def dialer(targets):
+    """Return the `dial` for `dispatch`: an OPEN's index picks its (address, port)."""
+
+    async def dial(payload):
+        """Open a connection to the target an OPEN frame names."""
+        (index,) = INDEX.unpack(payload)
+        if index >= len(targets):
+            raise OSError(f"no target number {index}")
+        return await asyncio.open_connection(*targets[index])
+
+    return dial
+
+
+async def dispatch(tunnel, dial):
     """Act on frames from the pipe until it ends, then close every connection.
 
-    `dial` takes an OPEN frame's payload and opens its far end. Only the Mac side
-    passes one. It runs inline, so no DATA frame overtakes the dial for its own
-    connection.
+    `dial` takes an OPEN frame's payload and opens its far end. It runs inline, so
+    no DATA frame overtakes the dial for its own connection.
     """
     pumps = set()
     while True:
@@ -115,7 +144,7 @@ async def dispatch(tunnel, dial=None):
         if got is None:
             break
         kind, conn, payload = got
-        if kind == OPEN and dial is not None:
+        if kind == OPEN:
             try:
                 reader, writer = await dial(payload)
             except OSError as error:
@@ -152,32 +181,23 @@ async def stdio_pipes():
     return pipe_in, pipe_out
 
 
-async def serve_inside(listeners):
-    """Listen on each (address, port) and send every connection through stdout.
+async def serve_inside(listeners, targets):
+    """Listen on each (address, port) in `listeners`, and dial `targets` on request.
 
-    An OPEN frame carries its listener's index in `listeners`, so the Mac side knows
-    where to dial. A listener that cannot bind ends the helper, with no partial tunnel.
+    The helper's OPEN carries its listener's index in `listeners`, so the Mac side
+    knows where to dial. The Mac's OPEN carries an index in `targets`, the address
+    and port to dial in here. A listener that cannot bind ends the helper, with no
+    partial tunnel.
     """
     pipe_in, pipe_out = await stdio_pipes()
     tunnel = Tunnel(pipe_in, pipe_out, {}, {})
-    numbers = itertools.count(1)
-
-    def acceptor(index):
-        """Return the accept callback for the listener at `index`."""
-
-        async def accept(reader, writer):
-            """Number a new connection, announce it with its listener, and pump it."""
-            conn = next(numbers)
-            open_link(tunnel, conn, writer)
-            pipe_out.write(frame(OPEN, conn, INDEX.pack(index)))
-            await pump(tunnel, conn, reader)
-
-        return accept
+    numbers = itertools.count(1, 2)
 
     servers = []
     for index, (address, port) in enumerate(listeners):
         try:
-            servers.append(await asyncio.start_server(acceptor(index), address, port))
+            accept = acceptor(tunnel, numbers, index)
+            servers.append(await asyncio.start_server(accept, address, port))
         except OSError as error:
             reason = error.strerror
             if error.errno == errno.EADDRINUSE:
@@ -185,12 +205,12 @@ async def serve_inside(listeners):
             log(f"inside: cannot listen on {address}:{port}: {reason}")
             raise SystemExit(1) from None
         log(f"inside: listening on {address}:{port}")
-    await dispatch(tunnel)
+    await dispatch(tunnel, dialer(targets))
     for server in servers:
         server.close()
     log("inside: input ended, helper exiting")
 
 
-def listen(listeners):
+def listen(listeners, targets):
     """Run the inside half until stdin ends. The container's entry point."""
-    asyncio.run(serve_inside(listeners))
+    asyncio.run(serve_inside(listeners, targets))

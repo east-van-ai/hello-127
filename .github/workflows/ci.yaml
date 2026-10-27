@@ -22,6 +22,32 @@ jobs:
             3.10
             3.14
 
+      # the JavaScript helper's floor, not whatever node the runner carries
+      - name: Set up Node 20
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      # the PHP helper's floor; no tools or coverage, since the tests run php -r alone
+      - name: Set up PHP 8.2
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          tools: none
+          coverage: none
+
+      # the Ruby helper's floor; Minitest comes with it as a bundled gem
+      - name: Set up Ruby 3.3
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      # the Perl helper's floor; Test::More comes with it
+      - name: Set up Perl 5.34
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: '5.34'
+
       # standard library only, but the tests import the package from src
       - name: Install
         run: python -m pip install -e .
@@ -29,9 +55,23 @@ jobs:
       - name: Run tests
         run: python -m unittest
 
+  # Ubuntu's busybox cuts nc down, so the BusyBox tests run in Alpine, through
+  # docker run, since GitHub's JavaScript actions do not run on Alpine's musl
+  busybox:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Run tests in python:3.14-alpine
+        run: >-
+          docker run --rm -v "$PWD":/src -w /src -e PYTHONDONTWRITEBYTECODE=1
+          python:3.14-alpine sh -c
+          'pip install -q --root-user-action=ignore -e . && python -m unittest'
+
   # every run builds, so a branch push proves the package before any tag
   build:
-    needs: test
+    needs: [test, busybox]
     runs-on: ubuntu-latest
 
     steps:

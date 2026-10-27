@@ -5,7 +5,7 @@ import sys
 from collections import namedtuple
 from importlib import metadata
 
-from hello_127 import cli_query, cli_tunnel, launch
+from hello_127 import cli_languages, cli_query, cli_tunnel, launch
 
 PROG = "hello-127"
 
@@ -21,12 +21,12 @@ LOOPBACK = "127.0.0.1"
 OLLAMA_PORT = 11434
 
 Forward = namedtuple("Forward", "bind port host hostport")
-"""Where the helper listens inside, and what the Mac dials for each connection."""
+"""A listener and its target: for `--out`, the helper listens and the Mac dials;
+for `--in`, the Mac listens and the helper dials."""
 
 Endpoint = namedtuple("Endpoint", "address port")
 """An address and a port, for `ollama-query` to dial inside the container."""
 
-DEFAULT_FORWARD = Forward(LOOPBACK, OLLAMA_PORT, LOOPBACK, OLLAMA_PORT)
 DEFAULT_ENDPOINT = Endpoint(LOOPBACK, OLLAMA_PORT)
 
 
@@ -91,18 +91,37 @@ def endpoint_spec(text):
     return Endpoint(loopback(address), port_number(port))
 
 
+def language_list(text):
+    """Read `NAME[,NAME]...` into a tuple of languages, in the order to try them."""
+    names = tuple(text.split(","))
+    for name in names:
+        if name not in launch.LANGUAGES:
+            raise argparse.ArgumentTypeError(
+                f"not a language: {name!r}; choose from {','.join(launch.LANGUAGES)}"
+            )
+        if names.count(name) > 1:
+            raise argparse.ArgumentTypeError(f"{name} given twice")
+    return names
+
+
 class StoreOnce(argparse.Action):
-    """Store a flag's value, and refuse the flag given a second time."""
+    """Store a flag's value, and refuse the flag given a second time.
+
+    The flags already stored are kept on the namespace. Comparing the value against
+    the default misses a repeat whose first occurrence names the default.
+    """
 
     def __call__(self, parser, namespace, values, option_string=None):
-        """Store `values`, unless an earlier occurrence already replaced the default."""
-        if getattr(namespace, self.dest) is not self.default:
+        """Store `values`, unless an earlier occurrence already stored one."""
+        stored = vars(namespace).setdefault("stored_once", set())
+        if self.dest in stored:
             raise argparse.ArgumentError(self, "given more than once")
+        stored.add(self.dest)
         setattr(namespace, self.dest, values)
 
 
 class AppendForward(argparse.Action):
-    """Collect each --forward in order, and refuse a listener given twice."""
+    """Collect each --out or --in in order, and refuse a listener given twice."""
 
     def __call__(self, parser, namespace, values, option_string=None):
         """Append `values`, starting a fresh list in place of the default."""
@@ -132,6 +151,19 @@ def add_runtime_slots(command):
     return command
 
 
+def add_languages_flag(command, what):
+    """Add `--languages`, the languages to try for the `what` sent into the container."""
+    command.add_argument(
+        "--languages",
+        type=language_list,
+        action=StoreOnce,
+        default=tuple(launch.LANGUAGES),
+        metavar="LIST",
+        help=f"the languages to try for the {what} in the container, in order, "
+        f"comma-separated (default: {','.join(launch.LANGUAGES)})",
+    )
+
+
 def add_tunnel(subparsers):
     """Add the `tunnel` subparser and return it."""
     tunnel = add_runtime_slots(
@@ -140,16 +172,26 @@ def add_tunnel(subparsers):
         )
     )
     tunnel.add_argument(
-        "--forward",
+        "--out",
         type=forward_spec,
         action=AppendForward,
-        default=[DEFAULT_FORWARD],
-        dest="forwards",
+        default=[],
+        dest="outs",
         metavar="SPEC",
-        help="listen on BIND:PORT inside and dial HOST:HOSTPORT on the Mac, "
-        "as [BIND:]PORT:HOST:HOSTPORT, all loopback; repeat for more "
-        "(default: 127.0.0.1:11434:127.0.0.1:11434)",
+        help="listen inside, dial the Mac: [BIND:]PORT:HOST:HOSTPORT, BIND:PORT "
+        "inside and HOST:HOSTPORT on the Mac, all loopback; repeat for more",
     )
+    tunnel.add_argument(
+        "--in",
+        type=forward_spec,
+        action=AppendForward,
+        default=[],
+        dest="ins",
+        metavar="SPEC",
+        help="listen on the Mac, dial inside: [BIND:]PORT:HOST:HOSTPORT, BIND:PORT "
+        "on the Mac and HOST:HOSTPORT inside, all loopback; repeat for more",
+    )
+    add_languages_flag(tunnel, "helper")
     return tunnel
 
 
@@ -171,14 +213,29 @@ def add_ollama_query(subparsers):
         metavar="ADDRESS:PORT",
         help="where the tunnel listens inside, loopback (default: 127.0.0.1:11434)",
     )
+    add_languages_flag(query, "query")
     return query
+
+
+def add_languages(subparsers):
+    """Add the `languages` subparser and return it."""
+    return add_runtime_slots(
+        subparsers.add_parser(
+            "languages",
+            help=cli_languages.HELP,
+            usage=cli_languages.USAGE,
+            allow_abbrev=False,
+        )
+    )
 
 
 def build_parser():
     """Build the top-level parser with every command."""
     parser = argparse.ArgumentParser(
         prog=PROG,
-        usage="\n       ".join([cli_tunnel.USAGE, cli_query.USAGE, f"{PROG} version"]),
+        usage="\n       ".join(
+            [cli_tunnel.USAGE, cli_query.USAGE, cli_languages.USAGE, f"{PROG} version"]
+        ),
         epilog=PATHS,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         allow_abbrev=False,
@@ -193,6 +250,7 @@ def build_parser():
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND", required=True)
     add_tunnel(subparsers)
     add_ollama_query(subparsers)
+    add_languages(subparsers)
     subparsers.add_parser(
         "version", help="print the installed version and exit", allow_abbrev=False
     )

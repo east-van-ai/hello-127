@@ -10,8 +10,11 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from hello_127 import launch, query
+from tests.test_tunnel import BUSYBOX, BUSYBOX_SKIP, PERL, PERL_SKIP, RUBY, RUBY_SKIP
 
 PYTHON_FLOOR = shutil.which("python3.10")
+NODE = shutil.which("node")
+PHP = shutil.which("php")
 
 
 class FakeOllama(BaseHTTPRequestHandler):
@@ -34,6 +37,13 @@ class FakeOllama(BaseHTTPRequestHandler):
         for part in parts + self.ending:
             self.wfile.write((json.dumps(part) + "\n").encode())
 
+    def do_GET(self):
+        """Answer `/` the way Ollama does, with no newline."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b"Ollama is running")
+
     def log_message(self, *args):
         """Keep the test output quiet."""
 
@@ -45,17 +55,32 @@ def free_port():
         return probe.getsockname()[1]
 
 
-def run_query(port, python=sys.executable):
-    """Run the query program against 127.0.0.1:port and return the finished process."""
-    return subprocess.run(
-        [python, "-c", launch.source(query, "ask", "127.0.0.1", port)],
-        capture_output=True,
-        timeout=10,
-    )
+def run_query(port, language="python", python=sys.executable):
+    """Run the query program in `language` against 127.0.0.1:port, and return it."""
+    program = launch.source(query, "ask", "127.0.0.1", port, language=language)
+    if language == "node":
+        command = [NODE, "-e", program]
+    elif language == "php":
+        command = [PHP, "-r", program]
+    elif language == "ruby":
+        command = [RUBY, "-e", program]
+    elif language == "perl":
+        command = [PERL, "-e", program]
+    elif language == "busybox":
+        command = [BUSYBOX, "sh", "-c", program]
+    else:
+        command = [python, "-c", program]
+    return subprocess.run(command, capture_output=True, timeout=10)
 
 
 class QueryTest(unittest.TestCase):
     """The program that runs inside the container, run here instead."""
+
+    LANGUAGE = "python"
+
+    def ask(self, port, python=sys.executable):
+        """Run this class's query program against 127.0.0.1:port."""
+        return run_query(port, self.LANGUAGE, python)
 
     def serve(self, handler):
         """Serve `handler` on a free port in a thread, and return the port."""
@@ -67,7 +92,7 @@ class QueryTest(unittest.TestCase):
 
     def test_streams_the_answer(self):
         """The parts print in order, then a newline, exit 0."""
-        query = run_query(self.serve(FakeOllama))
+        query = self.ask(self.serve(FakeOllama))
         self.assertEqual(query.returncode, 0)
         self.assertEqual(query.stdout, b"Hello from the fake.\n")
 
@@ -79,7 +104,7 @@ class QueryTest(unittest.TestCase):
 
             ending = []
 
-        query = run_query(self.serve(CutOff))
+        query = self.ask(self.serve(CutOff))
         self.assertEqual(query.returncode, 1)
         self.assertEqual(query.stdout, b"Hello from the fake.\n")
         self.assertEqual(
@@ -95,7 +120,7 @@ class QueryTest(unittest.TestCase):
 
             ending = [{"error": "model runner has unexpectedly stopped"}]
 
-        query = run_query(self.serve(Failing))
+        query = self.ask(self.serve(Failing))
         self.assertEqual(query.returncode, 1)
         self.assertEqual(query.stdout, b"Hello from the fake.\n")
         self.assertEqual(
@@ -107,7 +132,7 @@ class QueryTest(unittest.TestCase):
     def test_nothing_listening(self):
         """No tunnel: one line that says so, exit 1, no traceback."""
         port = free_port()
-        query = run_query(port)
+        query = self.ask(port)
         self.assertEqual(query.returncode, 1)
         self.assertEqual(
             query.stderr.decode(),
@@ -129,7 +154,7 @@ class QueryTest(unittest.TestCase):
                 connection.close()
 
             threading.Thread(target=accept_and_close, daemon=True).start()
-            query = run_query(port)
+            query = self.ask(port)
         self.assertEqual(query.returncode, 1)
         self.assertEqual(
             query.stderr.decode(),
@@ -150,7 +175,7 @@ class QueryTest(unittest.TestCase):
                 self.end_headers()
                 self.wfile.write(b'{"error": "model \\"hf.co/CohereLabs/tiny-aya-global-GGUF:Q4_K_M\\" not found"}')
 
-        query = run_query(self.serve(NoModels))
+        query = self.ask(self.serve(NoModels))
         self.assertEqual(query.returncode, 1)
         self.assertEqual(
             query.stderr.decode(),
@@ -160,8 +185,89 @@ class QueryTest(unittest.TestCase):
     @unittest.skipUnless(PYTHON_FLOOR, "python3.10 not on PATH")
     def test_on_python_floor(self):
         """The program runs on the oldest Python a container may have."""
-        query = run_query(self.serve(FakeOllama), python=PYTHON_FLOOR)
+        query = self.ask(self.serve(FakeOllama), python=PYTHON_FLOOR)
         self.assertEqual(query.stdout, b"Hello from the fake.\n")
+
+
+
+@unittest.skipUnless(NODE, "node not on PATH")
+class JavaScriptQueryTest(QueryTest):
+    """The same cases, with query.js in place of query.py."""
+
+    LANGUAGE = "node"
+    test_on_python_floor = None
+
+
+@unittest.skipUnless(PHP, "php not on PATH")
+class PhpQueryTest(QueryTest):
+    """The same cases, with query.php in place of query.py."""
+
+    LANGUAGE = "php"
+    test_on_python_floor = None
+
+
+@unittest.skipUnless(RUBY, RUBY_SKIP)
+class RubyQueryTest(QueryTest):
+    """The same cases, with query.rb in place of query.py."""
+
+    LANGUAGE = "ruby"
+    test_on_python_floor = None
+
+
+@unittest.skipUnless(PERL, PERL_SKIP)
+class PerlQueryTest(QueryTest):
+    """The connection cases, with query.pl in place of query.py.
+
+    With no JSON in perl-base, query.pl asks for `/` instead of a chat, so the chat
+    cases are off.
+    """
+
+    LANGUAGE = "perl"
+    test_streams_the_answer = None
+    test_cut_off_answer = None
+    test_error_mid_answer = None
+    test_model_missing = None
+    test_on_python_floor = None
+
+    def test_ollama_is_running(self):
+        """Ollama's answer to `/` prints with a newline, exit 0."""
+        query = self.ask(self.serve(FakeOllama))
+        self.assertEqual(query.returncode, 0, query.stderr)
+        self.assertEqual(query.stdout, b"Ollama is running\n")
+
+    def test_error_status(self):
+        """A status of 400 or more comes through in one line, exit 1."""
+
+        class Broken(FakeOllama):
+            """A fake Ollama whose `/` fails."""
+
+            def do_GET(self):
+                """Answer `/` with a 500."""
+                self.send_response(500)
+                self.end_headers()
+
+        query = self.ask(self.serve(Broken))
+        self.assertEqual(query.returncode, 1)
+        self.assertEqual(query.stderr.decode(), "hello-127: Ollama answered 500\n")
+
+
+
+@unittest.skipUnless(BUSYBOX, BUSYBOX_SKIP)
+class BusyBoxQueryTest(QueryTest):
+    """The connection cases, with query.sh in place of query.py.
+
+    BusyBox has no JSON either, so query.sh asks for `/` like query.pl, and takes the
+    Perl cases.
+    """
+
+    LANGUAGE = "busybox"
+    test_streams_the_answer = None
+    test_cut_off_answer = None
+    test_error_mid_answer = None
+    test_model_missing = None
+    test_on_python_floor = None
+    test_ollama_is_running = PerlQueryTest.test_ollama_is_running
+    test_error_status = PerlQueryTest.test_error_status
 
 
 if __name__ == "__main__":

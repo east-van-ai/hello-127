@@ -9,9 +9,12 @@
         hello-127
 
 Carries TCP over a container's standard streams, so a container with no
-network reaches Ollama on the Mac's 127.0.0.1. A helper inside listens on
-127.0.0.1:11434; this side dials Ollama for every connection it reports.
-Reach for `tunnel`, then `ollama-query` to try it.
+network reaches Ollama on the Mac's 127.0.0.1. With `tunnel --out`, a
+helper inside listens on a loopback port, and this side dials Ollama for
+every connection it reports. `tunnel --in` runs the other way, from the
+Mac into the container.
+Reach for `tunnel`, then `ollama-query` to try it. `languages` lists which
+helper languages a container can run.
 
 Run a command with nothing after it for its own page.
 
@@ -21,14 +24,14 @@ piped input:
 exit codes:
     0:     success, and documentation
     1:     hello-127's own error: a missing CONTAINER, a stray word after it,
-           the runtime not on PATH, or the helper or the query exiting
-           with an error
+           a tunnel with no --out or --in, the runtime not on PATH, or the
+           helper or the query exiting with an error
     2:     an unknown command, an unknown option, or a bad value
 """
 import sys
 from collections import namedtuple
 
-from hello_127 import args, cli_query, cli_tunnel, errors
+from hello_127 import args, cli_languages, cli_query, cli_tunnel, errors
 
 # argparse exits 2 itself, so EXIT_ARGPARSE never returns through main.
 EXIT_OK = 0
@@ -42,12 +45,13 @@ def command_page(module, add_command):
     return f"{doc}\n\n{args.command_help(add_command).rstrip()}"
 
 
-Command = namedtuple("Command", "bare usage slots action")
+Command = namedtuple("Command", "bare usage slots action missing", defaults=(None,))
 """A command word's answer to being typed alone, its usage line, the path slots it
-reads, and the action a full invocation runs.
+reads, the action a full invocation runs, and what it still needs past the slots.
 
 `bare` returns the text for the bare word; `action` runs the command. For `version`,
 both read from `version_line`, since running the command answers the bare word.
+`missing`, when set, returns what the parsed flags still lack, or None.
 """
 
 COMMANDS = {
@@ -56,12 +60,19 @@ COMMANDS = {
         cli_tunnel.USAGE,
         cli_tunnel.SLOTS,
         lambda paths, parsed: cli_tunnel.run(*paths, parsed),
+        cli_tunnel.missing,
     ),
     "ollama-query": Command(
         lambda: command_page(cli_query, args.add_ollama_query),
         cli_query.USAGE,
         cli_query.SLOTS,
         lambda paths, parsed: cli_query.run(*paths, parsed),
+    ),
+    "languages": Command(
+        lambda: command_page(cli_languages, args.add_languages),
+        cli_languages.USAGE,
+        cli_languages.SLOTS,
+        lambda paths, parsed: cli_languages.run(*paths, parsed),
     ),
     "version": Command(
         args.version_line,
@@ -131,6 +142,10 @@ def main(argv=None):
             command.usage,
             f"{parsed.command} takes nothing after {last}: {strays[0]!r}",
         )
+
+    lacking = command.missing and command.missing(parsed)
+    if lacking:
+        return usage_error(command.usage, f"{parsed.command} needs {lacking}")
 
     try:
         command.action(paths, parsed)

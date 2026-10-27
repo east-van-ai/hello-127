@@ -3,11 +3,24 @@
 import asyncio
 import socket
 import struct
-import sys
 import unittest
 
-from hello_127 import host, launch, wire
-from tests.test_tunnel import connect, free_port, round_trip, to_port
+from hello_127 import host
+from tests.test_tunnel import (
+    BUSYBOX,
+    BUSYBOX_SKIP,
+    NODE,
+    PERL,
+    PERL_SKIP,
+    PHP,
+    RUBY,
+    RUBY_SKIP,
+    connect,
+    free_port,
+    helper_command,
+    round_trip,
+    to_port,
+)
 
 FLOOD = 32 * 1024 * 1024
 STALL_WAIT = 1.0
@@ -41,6 +54,8 @@ async def half_then_reset(reader, writer):
 class FailureTest(unittest.IsolatedAsyncioTestCase):
     """The tunnel against servers that misbehave, with the helper as a local process."""
 
+    LANGUAGE = "python"
+
     async def start(self, handler):
         """Start `handler` as the far side and the tunnel. Return the helper's port."""
         server = await asyncio.start_server(handler, "127.0.0.1", 0)
@@ -49,8 +64,7 @@ class FailureTest(unittest.IsolatedAsyncioTestCase):
         target = server.sockets[0].getsockname()[1]
         inside = free_port()
         self.stop = asyncio.Event()
-        program = launch.source(wire, "listen", [("127.0.0.1", inside)])
-        command = [sys.executable, "-c", program]
+        command = helper_command([("127.0.0.1", inside)], self.LANGUAGE)
         self.tunnel = asyncio.create_task(
             host.run(command, [to_port(target)], stop=self.stop)
         )
@@ -84,6 +98,41 @@ class FailureTest(unittest.IsolatedAsyncioTestCase):
         answer = await asyncio.wait_for(round_trip(inside, b"ask"), 5)
         self.assertEqual(answer, b"partial")
         await self.finish()
+
+
+@unittest.skipUnless(NODE, "node not on PATH")
+class JavaScriptFailureTest(FailureTest):
+    """The same misbehaving servers, with the JavaScript helper inside."""
+
+    LANGUAGE = "node"
+
+
+@unittest.skipUnless(PHP, "php not on PATH")
+class PhpFailureTest(FailureTest):
+    """The same misbehaving servers, with the PHP helper inside."""
+
+    LANGUAGE = "php"
+
+
+@unittest.skipUnless(RUBY, RUBY_SKIP)
+class RubyFailureTest(FailureTest):
+    """The same misbehaving servers, with the Ruby helper inside."""
+
+    LANGUAGE = "ruby"
+
+
+@unittest.skipUnless(PERL, PERL_SKIP)
+class PerlFailureTest(FailureTest):
+    """The same misbehaving servers, with the Perl helper inside."""
+
+    LANGUAGE = "perl"
+
+
+@unittest.skipUnless(BUSYBOX, BUSYBOX_SKIP)
+class BusyBoxFailureTest(FailureTest):
+    """The same misbehaving servers, with the BusyBox helper inside."""
+
+    LANGUAGE = "busybox"
 
 
 if __name__ == "__main__":
