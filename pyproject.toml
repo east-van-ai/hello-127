@@ -1,6 +1,6 @@
 [project]
 name = "hello-127"
-version = "0.2.0"
+version = "0.2.1"
 description = "Carry TCP over a container's standard streams to a service on the Mac's loopback"
 readme = "README.md"
 authors = [

@@ -26,6 +26,10 @@ Simple is the point:
 - **One command, in the foreground.** No daemon, no config file. Ctrl-C
   stops it.
 
+Working with an AI agent? Give it the skill in `skills/hello-127`. It
+tells the agent when to use the tunnel and how, before it reaches for
+`--network host`.
+
 ## Install
 
 - A Mac.
@@ -269,6 +273,11 @@ Each of the other languages also has tests in its own language, one
 section each in the languages doc. macOS has no BusyBox, so its tests run
 in an Alpine image, as that doc shows.
 
+The agent skill is tested too. `tests/test_skill.py` runs every
+`hello-127` command in the skill through the real parser. A renamed flag
+fails the suite, so the skill never teaches an agent a command that no
+longer works.
+
 ## Try it yourself
 
 A container started with `--network none` streams a chat from Ollama
@@ -452,6 +461,8 @@ macOS 26.6.2, Docker 29.9.2, Apple Container 1.6.0, and Ollama 0.33.3.
   trying the tunnel on Node, Perl, Ruby, PHP, and BusyBox images
 - [Stress](https://github.com/east-van-ai/hello-127/blob/main/docs/STRESS.md):
   how many connections each language holds, and how each one breaks
+- [Skill](https://github.com/east-van-ai/hello-127/blob/main/skills/hello-127/SKILL.md):
+  the same tool, written for an AI agent to load
 - [Changelog](https://github.com/east-van-ai/hello-127/blob/main/CHANGELOG.md): project history and releases
 
 ## Use of AI

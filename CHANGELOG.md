@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-28
+
+### Added
+
+- An agent skill, `skills/hello-127/SKILL.md`, tells a model when to reach for the
+  tunnel, how to run it, and where it stops; copy the folder into a skills directory.
+
 ## [0.2.0] - 2026-10-27
 
 ### Added
