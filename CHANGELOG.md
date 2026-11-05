@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-05
+
+### Added
+
+- `docs/RUNTIMES.md` covers Colima, OrbStack, Podman, and Apple Container, and how
+  `docker` reaches each engine, with `DOCKER_CONTEXT` for picking one per run.
+- README's gap table names each Docker engine's loopback hop, and so does the skill.
+- README and the skill show `pipx install hello-127`, for a Python 3.14 or newer.
+- The package metadata carries keywords and classifiers, for PyPI's search.
+
 ## [0.2.1] - 2026-10-28
 
 ### Added

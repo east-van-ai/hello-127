@@ -1,6 +1,6 @@
 ---
 name: hello-127
-description: Connect a network-isolated Docker or Apple Container container to TCP services on the Mac's 127.0.0.1, or the Mac to a server inside the container, without giving the container a network. Plain TCP to 127.0.0.1 on both sides, with no client change. Use when setting up an AI agent or app in a container on a Mac that uses Ollama or another service on the Mac; when a container runs with --network none (or should); when code in a container cannot reach the Mac's localhost, including on Apple Container, which has no host alias; when someone suggests host networking, host.docker.internal, rebinding a service to 0.0.0.0, or a socat sidecar or Unix socket relay to get there; or when a dev server inside an isolated container must open in the Mac's browser.
+description: Connect a network-isolated container on Docker (Docker Desktop, Colima, OrbStack, or Podman) or Apple Container to TCP services on the Mac's 127.0.0.1, or the Mac to a server inside the container, without giving the container a network. Plain TCP to 127.0.0.1 on both sides, with no client change. Use when setting up an AI agent or app in a container on a Mac that uses Ollama or another service on the Mac; when a container runs with --network none (or should); when code in a container cannot reach the Mac's localhost, including on Apple Container, which has no host alias; when someone suggests host networking, host.docker.internal, rebinding a service to 0.0.0.0, or a socat sidecar or Unix socket relay to get there; or when a dev server inside an isolated container must open in the Mac's browser.
 ---
 
 # hello-127
@@ -18,7 +18,8 @@ Unix socket, no relay container, and no change to its client: the stock
 
 Reach for hello-127 when all of these hold:
 
-- The host is a Mac, with Docker Desktop or Apple Container.
+- The host is a Mac, with a Docker engine (Docker Desktop, Colima,
+  OrbStack, or Podman) or Apple Container.
 - A container has no network, or should not get one. A container that
   runs an AI agent should not, so start it with `--network none`.
 - A service listens on loopback on one side, and a program on the other
@@ -42,7 +43,8 @@ Do not suggest these first. Each one widens what the container can reach:
 
 `host.docker.internal` works on Docker Desktop even for a service bound to
 the Mac's `127.0.0.1`, and that is the problem. Docker Desktop's own process
-dials loopback on the container's behalf, so the container reaches every
+dials loopback on the container's behalf. Colima, OrbStack, and Podman do
+the same, each with its own process. So the container reaches every
 loopback service on the Mac, and the internet besides. "Bound to
 127.0.0.1" stops meaning "local programs only". A relay container rests on
 the same path. Apple Container has no host alias at all.
@@ -59,8 +61,30 @@ uv tool install hello-127
 ```
 
 It needs [uv](https://docs.astral.sh/uv/), which also fetches its Python.
+Or install it with pipx, which uses a Python already on the Mac. That
+Python must be 3.14 or newer, or the install refuses.
+
+```bash
+pipx install hello-127
+```
+
 Nothing is installed in the image. hello-127 sends a small helper program
 to an interpreter the image already has.
+
+The runtime word is `docker` for every Docker engine. The `docker`
+command's context picks the engine, and hello-127 inherits it. To reach an
+engine other than the current one, set `DOCKER_CONTEXT` for that command
+alone. Never run `docker context use`: it changes the setting for every
+terminal on the Mac.
+
+```bash
+DOCKER_CONTEXT=colima hello-127 tunnel docker agent --out 11434:127.0.0.1:11434
+```
+
+`docker context ls` lists the engines, and marks the current one with `*`.
+Colima and OrbStack make their contexts. Podman makes none: if the human
+has not made one, say so, and point them at the socket path that
+`podman machine start` prints.
 
 ## Check the container
 
@@ -266,8 +290,8 @@ credentials, or any other channel it was given.
 
 ## Platform
 
-macOS with Docker Desktop or Apple Container. Windows is not supported:
-the tunnel stops before the helper starts.
+macOS with Docker Desktop, Colima, OrbStack, Podman, or Apple Container.
+Windows is not supported: the tunnel stops before the helper starts.
 
 ## More
 
@@ -278,6 +302,8 @@ version before trusting an older example.
   how it works, why not the network, and every recorded failure
 - [Languages](https://github.com/east-van-ai/hello-127/blob/main/docs/LANGUAGES.md):
   the walkthrough on Node, Perl, Ruby, PHP, and BusyBox images
+- [Runtimes](https://github.com/east-van-ai/hello-127/blob/main/docs/RUNTIMES.md):
+  how `docker` reaches each engine, and the setup for each runtime
 - [Stress](https://github.com/east-van-ai/hello-127/blob/main/docs/STRESS.md):
   how many connections each helper holds, and how each one breaks
 - [Changelog](https://github.com/east-van-ai/hello-127/blob/main/CHANGELOG.md):

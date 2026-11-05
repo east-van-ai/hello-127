@@ -1,6 +1,6 @@
 [project]
 name = "hello-127"
-version = "0.2.1"
+version = "0.2.2"
 description = "Carry TCP over a container's standard streams to a service on the Mac's loopback"
 readme = "README.md"
 authors = [
@@ -9,7 +9,33 @@ authors = [
 requires-python = ">=3.14"
 license = "MIT"
 license-files = ["LICENSE"]
-classifiers = ["Operating System :: MacOS"]
+keywords = [
+    "containers",
+    "docker",
+    "colima",
+    "orbstack",
+    "podman",
+    "apple-container",
+    "localhost",
+    "127.0.0.1",
+    "loopback",
+    "network-none",
+    "tunnel",
+    "port-forwarding",
+    "ollama",
+    "ai-agents",
+    "agent-skill",
+    "claude-code",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Networking",
+]
 dependencies = []
 
 [project.urls]

@@ -21,12 +21,18 @@ def skill_text():
 
 
 def skill_commands(text):
-    """Return each `hello-127` command in the skill's bash fences, continuations joined."""
+    """Return each `hello-127` command in the skill's bash fences, continuations joined.
+
+    A leading `NAME=value`, such as `DOCKER_CONTEXT=colima`, is dropped.
+    """
     commands = []
     for fence in re.findall(r"```bash\n(.*?)```", text, re.DOTALL):
         for line in fence.replace("\\\n", " ").splitlines():
-            if line.startswith("hello-127 "):
-                commands.append(shlex.split(line)[1:])
+            words = shlex.split(line)
+            while words and re.fullmatch(r"[A-Z_][A-Z0-9_]*=.*", words[0]):
+                words.pop(0)
+            if words[:1] == ["hello-127"]:
+                commands.append(words[1:])
     return commands
 
 
@@ -49,6 +55,11 @@ class SkillTest(unittest.TestCase):
                     code, _, err = run_cli(*argv)
                 self.assertEqual(code, cli.EXIT_OK, err)
                 run.assert_called_once()
+
+    def test_environment_prefix(self):
+        """A command led by `NAME=value` still counts, with the prefix dropped."""
+        text = "```bash\nDOCKER_CONTEXT=colima hello-127 languages docker agent\n```\n"
+        self.assertEqual(skill_commands(text), [["languages", "docker", "agent"]])
 
     def test_default_order(self):
         """The skill names the default order of `launch.LANGUAGES`."""

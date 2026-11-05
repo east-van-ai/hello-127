@@ -34,13 +34,21 @@ tells the agent when to use the tunnel and how, before it reaches for
 
 - A Mac.
 - [uv](https://docs.astral.sh/uv/), which installs hello-127 and fetches
-  its Python.
+  its Python. Or [pipx](https://pipx.pypa.io/), which runs on a Python
+  already there, and that Python must be 3.14 or newer.
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/), or
+  another Docker engine: Colima, OrbStack, or Podman. Or
   [Apple Container](https://github.com/apple/container).
 - hello-127, from PyPI:
 
   ```bash
   uv tool install hello-127
+  ```
+
+  Or, with pipx:
+
+  ```bash
+  pipx install hello-127
   ```
 
 hello-127 itself needs nothing beyond Python's standard library.
@@ -61,8 +69,19 @@ Measured on macOS with Docker Desktop 4.92.0 and Ollama 0.33.3:
 - A test web server bound to 127.0.0.1 refused the Mac's own LAN address.
   A container on Docker's default network read from it anyway.
 
+The other Docker engines do the same. Each one has its own process on the
+Mac, and it dials 127.0.0.1 for a container on the engine's default
+network:
+
+| Runtime | Engine | Process on the Mac |
+| --- | --- | --- |
+| Docker Desktop | Docker's, in its own VM | `com.docker.backend` |
+| Colima | Docker's, in a Lima VM | `limactl` |
+| OrbStack | Docker's, in its own VM | `OrbStack Helper` |
+| Podman | Podman's, speaking Docker's API | `gvproxy` |
+
 That is a gap. "Bound to loopback" stops meaning "local programs only" the
-moment Docker Desktop is running.
+moment any of them is running.
 
 Apple Container has no such hop. Its traffic arrives over a network
 interface, so reaching Ollama there needs a firewall exception or sudo.
@@ -82,10 +101,17 @@ hello-127 tunnel: error: argument --out: not a loopback address: '10.0.0.5'
 
 ## How it works
 
-hello-127 does the job of `com.docker.backend` on purpose, through a pipe
-every runtime already has. `docker exec -i` and `container exec -i` run a
-**helper** program inside a container and hand you its standard input and
-output.
+`com.docker.backend` and hello-127 make the same hop. A process on the Mac
+dials 127.0.0.1 for a container. What differs is the reach:
+
+- `com.docker.backend` makes the hop for any container on a Docker network,
+  to any port, whenever Docker Desktop runs.
+- hello-127 makes it for one container, to the ports you name, while the
+  command runs in your terminal.
+
+The hop travels through a pipe every runtime already has. `docker exec -i`
+and `container exec -i` run a **helper** program inside a container and
+hand its standard input and output to hello-127.
 
 ```text
   Mac                                          container (--network none)
@@ -99,11 +125,14 @@ output.
  └────────────────────────────┘              └──────────────────────────────┘
 ```
 
-- **Inside the container**, a small helper listens on 127.0.0.1:11434. It
-  shares the container's network, so your program sees Ollama as local.
+- **`--out`** listens inside and dials the Mac. The helper holds
+  127.0.0.1:11434 in the container's own network, so your program sees
+  Ollama as local. hello-127 dials Ollama on the Mac's loopback.
+- **`--in`** is the mirror. hello-127 listens on the Mac, and the helper
+  dials inside the container.
 - **On the wire**, each connection becomes frames: open, data, close, each
-  tagged with a connection number. Many connections share one pipe.
-- **On the Mac**, hello-127 reads the frames and dials Ollama on loopback.
+  tagged with a connection number. Either end may open one, and many
+  connections share one pipe.
 
 None of this is new. SSH's `ProxyCommand` carries one TCP stream over a
 program's standard streams. `ssh -L` and `kubectl port-forward` carry many
@@ -188,7 +217,8 @@ out.
 
 ## How it fails
 
-Each of these was run on both runtimes. The tunnel is left as it is.
+Each of these was run on Docker Desktop and Apple Container. The tunnel is
+left as it is.
 
 - **One slow reader stalls everyone.** All connections share one pipe. A
   client that leaves about a megabyte unread freezes every other connection.
@@ -436,29 +466,17 @@ hello-127: inside: input ended, helper exiting
 
 Then `docker stop h127` removes the container.
 
-### Apple Container
-
-Apple Container works the same way, with the same flags:
-
-```bash
-container run -d --rm --name h127 --network none python:3.12-slim sleep infinity
-container exec -d h127 python3 -m http.server 8000 --bind 127.0.0.1
-hello-127 tunnel container h127 --out 11434:127.0.0.1:11434 --in 8080:127.0.0.1:8000
-```
-
-The chat is `hello-127 ollama-query container h127`, and `lsof` again
-names hello-127's Python. <http://127.0.0.1:8080/> shows the container's
-root folder, with no firewall exception and no sudo. Then
-`container stop h127` removes the container.
-
 ### Tested with
 
-macOS 26.6.2, Docker 29.9.2, Apple Container 1.6.0, and Ollama 0.33.3.
+macOS 26.6.2, Docker 29.9.2, and Ollama 0.33.3.
 
 ## More documentation
 
 - [Languages](https://github.com/east-van-ai/hello-127/blob/main/docs/LANGUAGES.md):
   trying the tunnel on Node, Perl, Ruby, PHP, and BusyBox images
+- [Runtimes](https://github.com/east-van-ai/hello-127/blob/main/docs/RUNTIMES.md):
+  how `docker` reaches each engine, and the tunnel on Colima, OrbStack,
+  Podman, and Apple Container
 - [Stress](https://github.com/east-van-ai/hello-127/blob/main/docs/STRESS.md):
   how many connections each language holds, and how each one breaks
 - [Skill](https://github.com/east-van-ai/hello-127/blob/main/skills/hello-127/SKILL.md):
